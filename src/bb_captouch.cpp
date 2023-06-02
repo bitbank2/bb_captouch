@@ -22,18 +22,14 @@ int BBCapTouch::init(int iSDA, int iSCL, int iRST, int iINT, uint32_t u32Speed)
 {
 uint8_t ucTemp[4];
 
-    Wire.begin(iSDA, iSCL);
+    Wire.begin(iSDA, iSCL); // this is specific to ESP32 MCUs
     Wire.setClock(u32Speed);
     _iType = -1;
 
-    if (I2CTest(GT911_ADDR1)) {
+    if (I2CTest(GT911_ADDR1) || I2CTest(GT911_ADDR2) {
        _iType = CT_TYPE_GT911;
-       _iAddr = GT911_ADDR1;
-    } else if (I2CTest(GT911_ADDR2)) {
-       _iType = CT_TYPE_GT911;
-       _iAddr = GT911_ADDR2;
     }
-    if (_iType == CT_TYPE_GT911) {
+    if (_iType == CT_TYPE_GT911) { // reset the sensor to start it
        pinMode(iRST, OUTPUT);
        pinMode(iINT, OUTPUT);
        digitalWrite(iINT, LOW);
@@ -61,7 +57,10 @@ uint8_t ucTemp[4];
     }
     return CT_SUCCESS;
 } /* init() */
-
+//
+// Test if an I2C device is monitoring an address
+// return true if it responds, false if no response
+//
 bool BBCapTouch::I2CTest(uint8_t u8Addr)
 {
 
@@ -138,7 +137,8 @@ int BBCapTouch::I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen)
 } /* I2CRead() */
 //
 // Read the touch points
-// returns 0 (none), 1 for touch points available
+// returns 0 (none), 1 if touch points are available
+// The point count and info is returned in the TOUCHINFO structure
 //
 int BBCapTouch::getSamples(TOUCHINFO *pTI)
 {
