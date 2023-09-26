@@ -26,7 +26,7 @@ uint8_t ucTemp[4];
     Wire.setClock(u32Speed);
     _iType = -1;
 
-    if (I2CTest(GT911_ADDR1) || I2CTest(GT911_ADDR2) {
+    if (I2CTest(GT911_ADDR1) || I2CTest(GT911_ADDR2)) {
        _iType = CT_TYPE_GT911;
     }
     if (_iType == CT_TYPE_GT911) { // reset the sensor to start it
