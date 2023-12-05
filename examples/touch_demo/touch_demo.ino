@@ -7,12 +7,13 @@
 #define TOUCH_RST 25
 
 BBCapTouch bbct;
-
+const char *szNames[] = {"Unknown", "FT6x36", "GT911", "CST820"};
 void setup() {
 
   Serial.begin(115200);
   bbct.init(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_INT);
-
+  int iType = bbct.sensorType();
+  Serial.printf("Sensor type = %s\n", szNames[iType]);
 } /* setup() */
 
 void loop() {

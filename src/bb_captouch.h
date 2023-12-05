@@ -27,13 +27,32 @@
 #define CT_ERROR -1
 
 enum {
-  CT_TYPE_FT6X36 = 0,
-  CT_TYPE_GT911
+  CT_TYPE_UNKNOWN = 0,
+  CT_TYPE_FT6X36,
+  CT_TYPE_GT911,
+  CT_TYPE_CST820,
+  CT_TYPE_COUNT
 };
 
 #define GT911_ADDR1 0x5D
 #define GT911_ADDR2 0x14
 #define FT6X36_ADDR 0x38
+#define CST820_ADDR 0x15
+
+// CST8xx gestures
+enum {
+  GESTURE_NONE = 0,
+  GESTURE_SWIPE_UP,
+  GESTURE_SWIPE_DOWN,
+  GESTURE_SWIPE_LEFT,
+  GESTURE_SWIPE_RIGHT,
+  GESTURE_SINGLE_CLICK,
+  GESTURE_DOUBLE_CLICK = 0x0B,
+  GESTURE_LONG_PRESS = 0x0C
+};
+
+// CST820 registers
+#define CST820_TOUCH_REGS 1
 
 // GT911 registers
 #define GT911_POINT_INFO 0x814E
@@ -67,6 +86,7 @@ public:
 
     int init(int iSDA, int iSCL, int iRST=-1, int iINT=-1, uint32_t u32Speed=400000);
     int getSamples(TOUCHINFO *pTI);
+    int sensorType(void);
  
 private:
     int _iAddr;

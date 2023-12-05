@@ -24,7 +24,7 @@ uint8_t ucTemp[4];
 
     Wire.begin(iSDA, iSCL); // this is specific to ESP32 MCUs
     Wire.setClock(u32Speed);
-    _iType = -1;
+    _iType = CT_TYPE_UNKNOWN;
 
     if (I2CTest(GT911_ADDR1) || I2CTest(GT911_ADDR2)) {
        _iType = CT_TYPE_GT911;
@@ -51,6 +51,9 @@ uint8_t ucTemp[4];
     } else if (I2CTest(FT6X36_ADDR)) {
        _iType = CT_TYPE_FT6X36;
        _iAddr = FT6X36_ADDR;
+    } else if (I2CTest(CST820_ADDR)) {
+       _iType = CT_TYPE_CST820;
+       _iAddr = CST820_ADDR;
     } else {
        Wire.end();
        return CT_ERROR; // no device found
@@ -142,17 +145,35 @@ int BBCapTouch::I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen)
 //
 int BBCapTouch::getSamples(TOUCHINFO *pTI)
 {
-uint8_t ucTemp[16];
+uint8_t *s, ucTemp[32];
 int i, rc;
     
     if (!pTI)
        return 0;
+    pTI->count = 0;
+    if (_iType == CT_TYPE_CST820) {
+       I2CReadRegister(_iAddr, CST820_TOUCH_REGS+1, ucTemp, 1); // read touch count
+       if (ucTemp[0] < 1 || ucTemp[0] > 5) { // something went wrong
+           return 0;
+       }
+       if (ucTemp[0] >= 1) { // touch data available, read it
+           pTI->count = ucTemp[0];
+           I2CReadRegister(_iAddr, CST820_TOUCH_REGS+2, ucTemp, pTI->count * 6);
+           s = ucTemp;
+           for (i=0; i<pTI->count; i++) {
+              pTI->x[i] = ((s[0] & 0xf) << 8) | s[1];
+              pTI->y[i] = ((s[2] & 0xf) << 8) | s[3];
+              pTI->area[i] = 1; // no data available
+              s += 6;
+           }
+           return 1;
+       }
+    }
     if (_iType == CT_TYPE_FT6X36) {
        rc = I2CReadRegister(_iAddr, TOUCH_REG_STATUS, ucTemp, 1); // read touch status
        if (rc == 0) { // something went wrong
            return 0;
        }
-       pTI->count = 0;
        i = ucTemp[0]; // number of touch points available
        if (i >= 1) { // get data
            rc = I2CReadRegister(_iAddr, TOUCH_REG_XH, ucTemp, 6*i); // read X+Y position(s)
@@ -198,3 +219,8 @@ int i, rc;
     } // GT911
     return 0;
 } /* getSamples() */
+
+int BBCapTouch::sensorType(void)
+{
+   return _iType;
+} /* type() */
