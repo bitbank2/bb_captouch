@@ -14,6 +14,15 @@
 // limitations under the License.
 //===========================================================================
 #include "bb_captouch.h"
+void BBCapTouch::reset(int iRST)
+{
+     pinMode(iRST, OUTPUT);
+     digitalWrite(iRST, LOW);
+     delay(100);
+     digitalWrite(iRST, HIGH);
+     delay(100);
+}  /* reset() */
+
 //
 // Initialize the library
 // It only needs to initialize the I2C interface; the chip is ready
@@ -24,8 +33,28 @@ uint8_t ucTemp[4];
 
     Wire.begin(iSDA, iSCL); // this is specific to ESP32 MCUs
     Wire.setClock(u32Speed);
+    Wire.setTimeout(100);
     _iType = CT_TYPE_UNKNOWN;
 
+    if (I2CTest(AXS15231_ADDR)) {
+       _iType = CT_TYPE_AXS15231;
+       _iAddr = AXS15231_ADDR;
+       if (iRST != -1) {
+          reset(iRST);
+       }
+       return CT_SUCCESS;
+    } // AXS15231
+
+    if (I2CTest(CST226_ADDR)) {
+       _iType = CT_TYPE_CST226;
+       _iAddr = CST226_ADDR;
+       if (iINT != -1) {
+          pinMode(iINT, INPUT);
+       }
+       if (iRST != -1) {
+          reset(iRST);
+       }
+    }
     if (I2CTest(GT911_ADDR1) || I2CTest(GT911_ADDR2)) {
        _iType = CT_TYPE_GT911;
     }
@@ -117,7 +146,8 @@ int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pDa
   Wire.write(u8Register);
   Wire.endTransmission();
   Wire.requestFrom(u8Addr, (uint8_t)iLen);
-  while (i < iLen)
+ // i = Wire.readBytes(pData, iLen);
+  while (Wire.available() && i < iLen)
   {
       pData[i++] = Wire.read();
   }
@@ -139,18 +169,102 @@ int BBCapTouch::I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen)
   return i;
 } /* I2CRead() */
 //
+// Private function to rotate touch samples if the user
+// specified a new display orientation
+//
+void BBCapTouch::fixSamples(TOUCHINFO *pTI)
+{
+int i, x, y;
+
+   for (i=0; i<pTI->count; i++) {
+       switch (_iOrientation) {
+           case 90:
+               x = pTI->y[i];
+               y = _iWidth - 1 - pTI->x[i];
+               pTI->x[i] = x;
+               pTI->y[i] = y;
+               break;
+           case 180:
+               pTI->x[i] = _iWidth - 1 - pTI->x[i];
+               pTI->y[i] = _iHeight - 1 - pTI->y[i];
+               break;
+           case 270:
+               x = _iHeight - 1 - pTI->y[i];
+               y = pTI->x[i];
+               pTI->x[i] = x;
+               pTI->y[i] = y;
+               break;
+           default: // do nothing
+               break;
+       }
+   }
+} /* fixSamples() */
+
+//
 // Read the touch points
 // returns 0 (none), 1 if touch points are available
 // The point count and info is returned in the TOUCHINFO structure
 //
 int BBCapTouch::getSamples(TOUCHINFO *pTI)
 {
-uint8_t *s, ucTemp[32];
-int i, rc;
+uint8_t c, *s, ucTemp[32];
+int i, j, rc;
     
     if (!pTI)
        return 0;
     pTI->count = 0;
+
+    if (_iType == CT_TYPE_AXS15231) {
+        uint8_t ucReadCMD[8] = {0xb5,0xab,0xa5,0x5a,0,0,0,0x8};
+        I2CWrite(_iAddr, (uint8_t *)ucReadCMD, 8);
+        I2CRead(_iAddr, ucTemp, 14); // read up to 2 touch points
+        c = ucTemp[1]; // number of touch points
+        if (c == 0 || c > 2 || ucTemp[0] != 0) return 0;
+        pTI->count = c;
+        j = 0; // buffer offset
+        for (i=0; i<c; i++) {
+             pTI->x[i] = ((ucTemp[j+2] & 0xf) << 8) + ucTemp[j+3];
+             pTI->y[i] = ((ucTemp[j+4] & 0xf) << 8) + ucTemp[j+5];
+             pTI->area[i] = 1;
+             j += 6; 
+        }
+        if (_iOrientation != 0) fixSamples(pTI);
+        return 1;
+    } // AXS15231
+ 
+    if (_iType == CT_TYPE_CST226) {
+        i = I2CReadRegister(_iAddr, 0, ucTemp, 28); // read the whole block of regs
+      Serial.printf("I2CReadRegister returned %d\n", i);
+#ifdef FUTURE
+        if (ucTemp[0] == 0x83 && ucTemp[1] == 0x17 && ucTemp[5] == 0x80) {
+        // home button pressed
+            return 0;
+        }
+        if (ucTemp[6] != 0xab) return 0;
+        if (ucTemp[0] == 0xab) return 0;
+        if (ucTemp[5] == 0x80) return 0;
+        c = ucTemp[5] & 0x7f;
+        if (c > 5 || c == 0) { // invalid point count
+           ucTemp[0] = 0;
+           ucTemp[1] = 0xab;
+           I2CWrite(_iAddr, ucTemp, 2); // reset
+           return 0;
+        }
+#endif
+        c = 1; // debug
+        pTI->count = c;
+        Serial.printf("count = %d\n", c);
+        j = 0;
+        for (i=0; i<c; i++) {
+           pTI->x[i] = (uint16_t)((ucTemp[j+1] << 4) | ((ucTemp[j+3] >> 4) & 0xf));
+           pTI->y[i] = (uint16_t)((ucTemp[j+2] << 4) | (ucTemp[j+3] & 0xf));
+           pTI->pressure[i] = ucTemp[j+4];
+           j = (i == 0) ? (j+7) : (j+5);
+        }
+        if (_iOrientation != 0) fixSamples(pTI);
+        return 1;
+    }
+
     if (_iType == CT_TYPE_CST820) {
        I2CReadRegister(_iAddr, CST820_TOUCH_REGS+1, ucTemp, 1); // read touch count
        if (ucTemp[0] < 1 || ucTemp[0] > 5) { // something went wrong
@@ -166,6 +280,7 @@ int i, rc;
               pTI->area[i] = 1; // no data available
               s += 6;
            }
+           if (_iOrientation != 0) fixSamples(pTI);
            return 1;
        }
     }
@@ -196,6 +311,7 @@ int i, rc;
                }
            }
        } // if touch points available
+       if (_iOrientation != 0) fixSamples(pTI);
        return 1;
     } else { // GT911
       I2CReadRegister16(_iAddr, GT911_POINT_INFO, ucTemp, 1); // get number of touch points
@@ -214,11 +330,23 @@ int i, rc;
              pTI->area[j] = ucTemp[5] + (ucTemp[6] << 8);
              pTI->pressure[j] = 0; 
          }
+         if (i && _iOrientation != 0) fixSamples(pTI);
          return (i > 0);
       }
     } // GT911
     return 0;
 } /* getSamples() */
+
+int BBCapTouch::setOrientation(int iOrientation, int iWidth, int iHeight)
+{
+    if (iOrientation != 0 && iOrientation != 90 && iOrientation != 180 && iOrientation != 270) {
+       return CT_ERROR;
+    }
+    _iOrientation = iOrientation;
+    _iWidth = iWidth;
+    _iHeight = iHeight;
+    return CT_SUCCESS;
+} /* setOrientation() */
 
 int BBCapTouch::sensorType(void)
 {

@@ -31,6 +31,8 @@ enum {
   CT_TYPE_FT6X36,
   CT_TYPE_GT911,
   CT_TYPE_CST820,
+  CT_TYPE_CST226,
+  CT_TYPE_AXS15231,
   CT_TYPE_COUNT
 };
 
@@ -38,6 +40,8 @@ enum {
 #define GT911_ADDR2 0x14
 #define FT6X36_ADDR 0x38
 #define CST820_ADDR 0x15
+#define CST226_ADDR 0x5A
+#define AXS15231_ADDR 0x3B
 
 // CST8xx gestures
 enum {
@@ -71,26 +75,37 @@ enum {
 #define TOUCH_REG_AREA 0x08
 // register offset to info for the second touch point
 #define PT2_OFFSET 6
+
+#ifndef __TOUCHINFO_STRUCT__
+#define __TOUCHINFO_STRUCT__
 typedef struct _fttouchinfo
 {
   int count;
   uint16_t x[5], y[5];
   uint8_t pressure[5], area[5];
 } TOUCHINFO;
+#endif
 
 class BBCapTouch
 {
 public:
-    BBCapTouch() {}
+    BBCapTouch() { _iOrientation = 0;}
     ~BBCapTouch() { Wire.end(); }
 
     int init(int iSDA, int iSCL, int iRST=-1, int iINT=-1, uint32_t u32Speed=400000);
     int getSamples(TOUCHINFO *pTI);
     int sensorType(void);
+    int setOrientation(int iOrientation, int iWidth, int iHeight);
+
+protected:
+    void reset(int iResetPin);
  
 private:
     int _iAddr;
     int _iType;
+    int _iOrientation, _iWidth, _iHeight;
+
+    void fixSamples(TOUCHINFO *pTI);
     bool I2CTest(uint8_t u8Addr);
     int I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen);
     int I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pData, int iLen);
