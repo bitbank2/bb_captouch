@@ -32,7 +32,7 @@ enum {
   CT_TYPE_GT911,
   CT_TYPE_CST820,
   CT_TYPE_CST226,
-//  CT_TYPE_AXS15231,
+  CT_TYPE_AXS15231,
   CT_TYPE_COUNT
 };
 
@@ -41,7 +41,7 @@ enum {
 #define FT6X36_ADDR 0x38
 #define CST820_ADDR 0x15
 #define CST226_ADDR 0x5A
-//#define AXS15231_ADDR 0x3B
+#define AXS15231_ADDR 0x3B
 
 // CST8xx gestures
 enum {

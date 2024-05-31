@@ -36,7 +36,6 @@ uint8_t ucTemp[4];
     Wire.setTimeout(100);
     _iType = CT_TYPE_UNKNOWN;
 
-#ifdef FUTURE
     if (I2CTest(AXS15231_ADDR)) {
        _iType = CT_TYPE_AXS15231;
        _iAddr = AXS15231_ADDR;
@@ -45,7 +44,6 @@ uint8_t ucTemp[4];
        }
        return CT_SUCCESS;
     } // AXS15231
-#endif
 
     if (I2CTest(CST226_ADDR)) {
        _iType = CT_TYPE_CST226;
@@ -82,9 +80,15 @@ uint8_t ucTemp[4];
     } else if (I2CTest(FT6X36_ADDR)) {
        _iType = CT_TYPE_FT6X36;
        _iAddr = FT6X36_ADDR;
+       if (iRST != -1) {
+          reset(iRST);
+       }
     } else if (I2CTest(CST820_ADDR)) {
        _iType = CT_TYPE_CST820;
        _iAddr = CST820_ADDR;
+       if (iRST != -1) {
+          reset(iRST);
+       }
     } else {
        Wire.end();
        return CT_ERROR; // no device found
@@ -216,7 +220,6 @@ int i, j, rc;
        return 0;
     pTI->count = 0;
 
-#ifdef FUTURE
     if (_iType == CT_TYPE_AXS15231) {
         uint8_t ucReadCMD[8] = {0xb5,0xab,0xa5,0x5a,0,0,0,0x8};
         I2CWrite(_iAddr, (uint8_t *)ucReadCMD, 8);
@@ -234,8 +237,7 @@ int i, j, rc;
         if (_iOrientation != 0) fixSamples(pTI);
         return 1;
     } // AXS15231
- #endif // FUTURE
-
+ 
     if (_iType == CT_TYPE_CST226) {
         i = I2CReadRegister(_iAddr, 0, ucTemp, 28); // read the whole block of regs
       Serial.printf("I2CReadRegister returned %d\n", i);
