@@ -36,6 +36,7 @@ uint8_t ucTemp[4];
     Wire.setTimeout(100);
     _iType = CT_TYPE_UNKNOWN;
 
+#ifdef FUTURE
     if (I2CTest(AXS15231_ADDR)) {
        _iType = CT_TYPE_AXS15231;
        _iAddr = AXS15231_ADDR;
@@ -44,6 +45,7 @@ uint8_t ucTemp[4];
        }
        return CT_SUCCESS;
     } // AXS15231
+#endif
 
     if (I2CTest(CST226_ADDR)) {
        _iType = CT_TYPE_CST226;
