@@ -237,13 +237,13 @@ int i, j, rc;
              j += 6; 
         }
         if (_iOrientation != 0) fixSamples(pTI);
-        return 1;
+        return (c > 0);
     } // AXS15231
  
     if (_iType == CT_TYPE_CST226) {
         i = I2CReadRegister(_iAddr, 0, ucTemp, 28); // read the whole block of regs
       Serial.printf("I2CReadRegister returned %d\n", i);
-#ifdef FUTURE
+// #ifdef FUTURE
         if (ucTemp[0] == 0x83 && ucTemp[1] == 0x17 && ucTemp[5] == 0x80) {
         // home button pressed
             return 0;
@@ -258,8 +258,8 @@ int i, j, rc;
            I2CWrite(_iAddr, ucTemp, 2); // reset
            return 0;
         }
-#endif
-        c = 1; // debug
+// #endif
+      //   c = 1; // debug
         pTI->count = c;
         Serial.printf("count = %d\n", c);
         j = 0;
@@ -270,7 +270,7 @@ int i, j, rc;
            j = (i == 0) ? (j+7) : (j+5);
         }
         if (_iOrientation != 0) fixSamples(pTI);
-        return 1;
+        return (c > 0);
     }
 
     if (_iType == CT_TYPE_CST820) {
@@ -320,7 +320,7 @@ int i, j, rc;
            }
        } // if touch points available
        if (_iOrientation != 0) fixSamples(pTI);
-       return 1;
+       return (i > 0); // Avoid returning empty data
     } else { // GT911
       I2CReadRegister16(_iAddr, GT911_POINT_INFO, ucTemp, 1); // get number of touch points
       i = ucTemp[0] & 0xf; // number of touches
