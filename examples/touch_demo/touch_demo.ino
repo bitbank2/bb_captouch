@@ -1,15 +1,25 @@
 #include <bb_captouch.h>
 //#include <OneBitDisplay.h>
 #include <bb_spi_lcd.h>
-#include <bb_scd41.h>
+//#include <bb_scd41.h>
 #include <Wire.h>
 
 //ONE_BIT_DISPLAY obd;
-SCD41 co2;
+//SCD41 co2;
 
 //#define CYD_128C
 //#define LILYGO_S3_PRO
-#define LILYGO_S3_LONG
+//#define LILYGO_S3_LONG
+#define CYD_543
+
+
+#ifdef CYD_543
+#define LCD DISPLAY_CYD_543
+#define TOUCH_SDA 8
+#define TOUCH_SCL 4
+#define TOUCH_INT 3
+#define TOUCH_RST 38
+#endif
 
 #ifdef LILYGO_S3_LONG
 #define TOUCH_SDA 15
@@ -114,7 +124,7 @@ while (1) {
       Serial.print("  y: ");Serial.print(ti.y[i]);
       Serial.print("  size: ");Serial.println(ti.area[i]);
       Serial.println(' ');
-      lcd.fillCircle(iWidth-1-ti.y[i], ti.x[i], 3, (i == 0) ? TFT_BLUE : TFT_RED);
+      lcd.fillCircle(ti.x[i], ti.y[i], 3, (i == 0) ? TFT_BLUE : TFT_RED);
     } // for each touch point
   } // if touch event happened
 } // while (1)
