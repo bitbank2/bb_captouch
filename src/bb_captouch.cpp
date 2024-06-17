@@ -24,6 +24,66 @@ void BBCapTouch::reset(int iRST)
 }  /* reset() */
 
 //
+// Initalize the MXT144 - an overly complicated mess of a touch sensor
+//
+int BBCapTouch::initMXT(void)
+{
+uint8_t ucTemp[32];
+int i, iObjCount, iReportID;
+uint16_t u16, u16Offset;
+
+// Read information block (first 7 bytes of address space)
+   I2CReadRegister16(_iAddr, 0, ucTemp, 7);
+   iObjCount = ucTemp[6];
+   if (iObjCount < 1 || iObjCount >64) { // invalid number of items
+      return CT_ERROR;
+   }
+   u16Offset = 7; // starting offset of first object
+   // Read the objects one by one to get the memory offests to the info we will need
+   iReportID = 1;
+   Serial.printf("object count = %d\n", iObjCount);
+   for (i=0; i<iObjCount; i++) {
+      I2CReadRegister16(_iAddr, u16Offset, ucTemp, 6);
+      Serial.printf("object %d, type %d\n", i, ucTemp[0]);
+      u16 = ucTemp[1] | (ucTemp[2] << 8);
+      switch (ucTemp[0]) {
+         case 2:
+            _mxtdata.t2_encryption_status_address = u16;
+            break;
+         case 5:
+            _mxtdata.t5_message_processor_address = u16;
+            _mxtdata.t5_max_message_size = ucTemp[4] - 1;
+            break;
+         case 6:
+            _mxtdata.t6_command_processor_address = u16;
+            break;
+         case 7:
+            _mxtdata.t7_powerconfig_address = u16;
+            break;
+         case 8:
+            _mxtdata.t8_acquisitionconfig_address = u16;
+            break;
+         case 44:
+            _mxtdata.t44_message_count_address = u16;
+            break;
+         case 46:
+            _mxtdata.t46_cte_config_address = u16;
+            break;
+         case 100:
+            _mxtdata.t100_multiple_touch_touchscreen_address = u16;
+            _mxtdata.t100_first_report_id = iReportID;
+            break;
+         default:
+            break;
+      } // switch on type
+      u16Offset += 6; // size in bytes of an object table
+      iReportID += ucTemp[5] * (ucTemp[4] + 1);
+   } // for each report
+Serial.printf("init success, count offset = %d\n", _mxtdata.t44_message_count_address);
+   return CT_SUCCESS;
+} /* initMXT() */
+
+//
 // Initialize the library
 // It only needs to initialize the I2C interface; the chip is ready
 //
@@ -47,6 +107,17 @@ uint8_t ucTemp[4];
     } // AXS15231
 #endif
 
+    if (I2CTest(MXT144_ADDR)) {
+       _iType = CT_TYPE_MXT144;
+       _iAddr = MXT144_ADDR;
+       if (iINT != -1) {
+          pinMode(iINT, INPUT);
+       }
+       if (iRST != -1) {
+          reset(iRST);
+       }
+       return initMXT();
+    }
     if (I2CTest(CST226_ADDR)) {
        _iType = CT_TYPE_CST226;
        _iAddr = CST226_ADDR;
@@ -130,8 +201,13 @@ int BBCapTouch::I2CReadRegister16(uint8_t u8Addr, uint16_t u16Register, uint8_t 
   int i = 0;
 
   Wire.beginTransmission(u8Addr);
-  Wire.write((uint8_t)(u16Register>>8)); // high byte
-  Wire.write((uint8_t)u16Register); // low byte
+  if (_iType == CT_TYPE_MXT144) { // little endian
+    Wire.write((uint8_t)u16Register); // low byte
+    Wire.write((uint8_t)(u16Register>>8)); // high byte
+  } else { // big endian address
+    Wire.write((uint8_t)(u16Register>>8)); // high byte
+    Wire.write((uint8_t)u16Register); // low byte
+  }
   Wire.endTransmission();
   Wire.requestFrom(u8Addr, (uint8_t)iLen);
   while (i < iLen)
@@ -222,6 +298,35 @@ int i, j, rc;
        return 0;
     pTI->count = 0;
 
+    if (_iType == CT_TYPE_MXT144) {
+       if (!_mxtdata.t44_message_count_address) {
+          return 0; // No message offset, so we can't read anything :(
+       }
+       I2CReadRegister16(_iAddr, _mxtdata.t44_message_count_address, ucTemp, 1);
+       j = ucTemp[0]; // object count
+       // As each message is read from the sensor, the internal count
+       // is decremented. It appears that it can hold 6 messages maximum
+       // before you must read them to receive more.
+       for (i = 0; i < j; i++) { // read the messages
+          I2CReadRegister16(_iAddr, _mxtdata.t5_message_processor_address, ucTemp, MXT_MESSAGE_SIZE); // each message is 6 bytes
+          // check report_id
+          if (ucTemp[0] >= _mxtdata.t100_first_report_id + 2 &&
+            ucTemp[0] < _mxtdata.t100_first_report_id + 2 + 5) {
+              uint8_t finger_idx = ucTemp[0] - _mxtdata.t100_first_report_id - 2;
+              uint8_t event = ucTemp[1] & 0xf;
+              if (finger_idx+1 > pTI->count) pTI->count = finger_idx+1;
+              pTI->x[finger_idx] = ucTemp[2] + (ucTemp[3] << 8);
+              pTI->y[finger_idx] = ucTemp[4] + (ucTemp[5] << 8);
+              if (event == 1 || event == 4) { // move/press event
+                  pTI->area[finger_idx] = 50;
+              } else if (event == 5) { // release
+                  pTI->area[finger_idx] = 0;
+              }
+           } // if touch report
+       } // for each report
+       return (pTI->count > 0);
+    } // MXT144
+
     if (_iType == CT_TYPE_AXS15231) {
         uint8_t ucReadCMD[8] = {0xb5,0xab,0xa5,0x5a,0,0,0,0x8};
         I2CWrite(_iAddr, (uint8_t *)ucReadCMD, 8);
@@ -237,13 +342,13 @@ int i, j, rc;
              j += 6; 
         }
         if (_iOrientation != 0) fixSamples(pTI);
-        return (c > 0);
+        return 1;
     } // AXS15231
  
     if (_iType == CT_TYPE_CST226) {
         i = I2CReadRegister(_iAddr, 0, ucTemp, 28); // read the whole block of regs
       Serial.printf("I2CReadRegister returned %d\n", i);
-// #ifdef FUTURE
+#ifdef FUTURE
         if (ucTemp[0] == 0x83 && ucTemp[1] == 0x17 && ucTemp[5] == 0x80) {
         // home button pressed
             return 0;
@@ -258,8 +363,8 @@ int i, j, rc;
            I2CWrite(_iAddr, ucTemp, 2); // reset
            return 0;
         }
-// #endif
-      //   c = 1; // debug
+#endif
+        c = 1; // debug
         pTI->count = c;
         Serial.printf("count = %d\n", c);
         j = 0;
@@ -270,7 +375,7 @@ int i, j, rc;
            j = (i == 0) ? (j+7) : (j+5);
         }
         if (_iOrientation != 0) fixSamples(pTI);
-        return (c > 0);
+        return 1;
     }
 
     if (_iType == CT_TYPE_CST820) {
@@ -320,7 +425,7 @@ int i, j, rc;
            }
        } // if touch points available
        if (_iOrientation != 0) fixSamples(pTI);
-       return (i > 0); // Avoid returning empty data
+       return 1;
     } else { // GT911
       I2CReadRegister16(_iAddr, GT911_POINT_INFO, ucTemp, 1); // get number of touch points
       i = ucTemp[0] & 0xf; // number of touches

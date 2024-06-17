@@ -32,6 +32,7 @@ enum {
   CT_TYPE_GT911,
   CT_TYPE_CST820,
   CT_TYPE_CST226,
+  CT_TYPE_MXT144,
   CT_TYPE_AXS15231,
   CT_TYPE_COUNT
 };
@@ -41,6 +42,7 @@ enum {
 #define FT6X36_ADDR 0x38
 #define CST820_ADDR 0x15
 #define CST226_ADDR 0x5A
+#define MXT144_ADDR 0x4A
 #define AXS15231_ADDR 0x3B
 
 // CST8xx gestures
@@ -54,6 +56,29 @@ enum {
   GESTURE_DOUBLE_CLICK = 0x0B,
   GESTURE_LONG_PRESS = 0x0C
 };
+
+typedef struct mxt_data_tag {
+    uint16_t t2_encryption_status_address;
+    uint16_t t5_message_processor_address;
+    uint16_t t5_max_message_size;
+    uint16_t t6_command_processor_address;
+    uint16_t t7_powerconfig_address;
+    uint16_t t8_acquisitionconfig_address;
+    uint16_t t44_message_count_address;
+    uint16_t t46_cte_config_address;
+    uint16_t t100_multiple_touch_touchscreen_address;
+    uint16_t t100_first_report_id;
+} MXTDATA;
+
+typedef struct mxt_object_tag {
+    uint8_t type;
+    uint16_t position;
+    uint8_t size_minus_one;
+    uint8_t instances_minus_one;
+    uint8_t report_ids_per_instance;
+} MXTOBJECT;
+
+#define MXT_MESSAGE_SIZE 6
 
 // CST820 registers
 #define CST820_TOUCH_REGS 1
@@ -104,7 +129,9 @@ private:
     int _iAddr;
     int _iType;
     int _iOrientation, _iWidth, _iHeight;
+    MXTDATA _mxtdata;
 
+    int initMXT(void);
     void fixSamples(TOUCHINFO *pTI);
     bool I2CTest(uint8_t u8Addr);
     int I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen);
