@@ -1,11 +1,7 @@
 #include <bb_captouch.h>
 //#include <OneBitDisplay.h>
 #include <bb_spi_lcd.h>
-//#include <bb_scd41.h>
 #include <Wire.h>
-
-//ONE_BIT_DISPLAY obd;
-//SCD41 co2;
 
 //#define CYD_128C
 //#define LILYGO_S3_PRO
@@ -70,7 +66,7 @@ BBCapTouch bbct;
 BB_SPI_LCD lcd;
 int iWidth, iHeight;
 
-const char *szNames[] = {"Unknown", "FT6x36", "GT911", "CST820", "CST226", "AXS15231"};
+const char *szNames[] = {"Unknown", "FT6x36", "GT911", "CST820", "CST226", "MXT144", "AXS15231"};
 void setup() {
 
   Serial.begin(115200);
