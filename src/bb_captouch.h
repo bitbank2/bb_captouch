@@ -103,6 +103,7 @@ typedef struct mxt_object_tag {
 
 #ifndef __TOUCHINFO_STRUCT__
 #define __TOUCHINFO_STRUCT__
+
 typedef struct _fttouchinfo
 {
   int count;
@@ -111,13 +112,16 @@ typedef struct _fttouchinfo
 } TOUCHINFO;
 #endif
 
+//extern TwoWire* myWire;
+
 class BBCapTouch
 {
 public:
     BBCapTouch() { _iOrientation = 0;}
-    ~BBCapTouch() { Wire.end(); }
+//    ~BBCapTouch() { Wire.end(); }
+    ~BBCapTouch() { myWire->end(); }
 
-    int init(int iSDA, int iSCL, int iRST=-1, int iINT=-1, uint32_t u32Speed=400000);
+    int init(int iSDA, int iSCL, int iRST=-1, int iINT=-1, uint32_t u32Speed=400000, TwoWire* _myWire=&Wire);
     int getSamples(TOUCHINFO *pTI);
     int sensorType(void);
     int setOrientation(int iOrientation, int iWidth, int iHeight);
@@ -130,6 +134,7 @@ private:
     int _iType;
     int _iOrientation, _iWidth, _iHeight;
     MXTDATA _mxtdata;
+    TwoWire* myWire;
 
     int initMXT(void);
     void fixSamples(TOUCHINFO *pTI);
