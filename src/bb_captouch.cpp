@@ -14,6 +14,7 @@
 // limitations under the License.
 //===========================================================================
 #include "bb_captouch.h"
+
 void BBCapTouch::reset(int iRST)
 {
      pinMode(iRST, OUTPUT);
@@ -87,13 +88,14 @@ Serial.printf("init success, count offset = %d\n", _mxtdata.t44_message_count_ad
 // Initialize the library
 // It only needs to initialize the I2C interface; the chip is ready
 //
-int BBCapTouch::init(int iSDA, int iSCL, int iRST, int iINT, uint32_t u32Speed)
+int BBCapTouch::init(int iSDA, int iSCL, int iRST, int iINT, uint32_t u32Speed, TwoWire* _myWire)
 {
 uint8_t ucTemp[4];
 
-    Wire.begin(iSDA, iSCL); // this is specific to ESP32 MCUs
-    Wire.setClock(u32Speed);
-    Wire.setTimeout(100);
+    myWire = _myWire;
+    myWire->begin(iSDA, iSCL); // this is specific to ESP32 MCUs
+    myWire->setClock(u32Speed);
+    myWire->setTimeout(100);
     _iType = CT_TYPE_UNKNOWN;
 
 #ifdef FUTURE
@@ -163,7 +165,7 @@ uint8_t ucTemp[4];
           reset(iRST);
        }
     } else {
-       Wire.end();
+       myWire->end();
        return CT_ERROR; // no device found
     }
     return CT_SUCCESS;
@@ -176,8 +178,8 @@ bool BBCapTouch::I2CTest(uint8_t u8Addr)
 {
 
   // Check if a device acknowledges the address.
-  Wire.beginTransmission(u8Addr);
-  return(Wire.endTransmission(true) == 0);
+  myWire->beginTransmission(u8Addr);
+  return(myWire->endTransmission(true) == 0);
 } /* I2CTest() */
 //
 // Write I2C data
@@ -188,9 +190,9 @@ int BBCapTouch::I2CWrite(uint8_t u8Addr, uint8_t *pData, int iLen)
 {
   int rc = 0;
 
-    Wire.beginTransmission(u8Addr);
-    Wire.write(pData, (uint8_t)iLen);
-    rc = !Wire.endTransmission();
+    myWire->beginTransmission(u8Addr);
+    myWire->write(pData, (uint8_t)iLen);
+    rc = !myWire->endTransmission();
     return rc;
 } /* I2CWrite() */
 //
@@ -200,19 +202,19 @@ int BBCapTouch::I2CReadRegister16(uint8_t u8Addr, uint16_t u16Register, uint8_t 
 {
   int i = 0;
 
-  Wire.beginTransmission(u8Addr);
+  myWire->beginTransmission(u8Addr);
   if (_iType == CT_TYPE_MXT144) { // little endian
-    Wire.write((uint8_t)u16Register); // low byte
-    Wire.write((uint8_t)(u16Register>>8)); // high byte
+    myWire->write((uint8_t)u16Register); // low byte
+    myWire->write((uint8_t)(u16Register>>8)); // high byte
   } else { // big endian address
-    Wire.write((uint8_t)(u16Register>>8)); // high byte
-    Wire.write((uint8_t)u16Register); // low byte
+    myWire->write((uint8_t)(u16Register>>8)); // high byte
+    myWire->write((uint8_t)u16Register); // low byte
   }
-  Wire.endTransmission();
-  Wire.requestFrom(u8Addr, (uint8_t)iLen);
+  myWire->endTransmission();
+  myWire->requestFrom(u8Addr, (uint8_t)iLen);
   while (i < iLen)
   {
-      pData[i++] = Wire.read();
+      pData[i++] = myWire->read();
   }
   return i;
 
@@ -226,14 +228,14 @@ int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pDa
   int rc;
   int i = 0;
 
-  Wire.beginTransmission(u8Addr);
-  Wire.write(u8Register);
-  Wire.endTransmission();
-  Wire.requestFrom(u8Addr, (uint8_t)iLen);
- // i = Wire.readBytes(pData, iLen);
-  while (Wire.available() && i < iLen)
+  myWire->beginTransmission(u8Addr);
+  myWire->write(u8Register);
+  myWire->endTransmission();
+  myWire->requestFrom(u8Addr, (uint8_t)iLen);
+ // i = myWire->readBytes(pData, iLen);
+  while (myWire->available() && i < iLen)
   {
-      pData[i++] = Wire.read();
+      pData[i++] = myWire->read();
   }
   return i;
 } /* I2CReadRegister() */
@@ -245,10 +247,10 @@ int BBCapTouch::I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen)
   int rc;
   int i = 0;
 
-  Wire.requestFrom(u8Addr, (uint8_t)iLen);
+  myWire->requestFrom(u8Addr, (uint8_t)iLen);
   while (i < iLen)
   {
-     pData[i++] = Wire.read();
+     pData[i++] = myWire->read();
   }
   return i;
 } /* I2CRead() */
