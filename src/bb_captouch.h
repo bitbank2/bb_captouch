@@ -17,14 +17,50 @@
 //
 // Written for the many variants of ESP32 + Capacitive touch LCDs on the market
 //
+#ifdef ARDUINO
 #include <Arduino.h>
 #include <Wire.h>
+#else
+#define INPUT 0
+#define OUTPUT 1
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#endif // ARDUINO
 
 #ifndef __BB_CAPTOUCH__
 #define __BB_CAPTOUCH__
 
 #define CT_SUCCESS 0
 #define CT_ERROR -1
+//
+// Pre-configured device names
+// Don't change the order of this list!
+// the structure values follow it. Always
+// add new values to the end
+//
+enum {
+  CONFIG_T_QT_C6=0,
+  CONFIG_CYD_550,
+  CONFIG_T_DISPLAY_S3_PRO,
+  CONFIG_T_DISPLAY_S3_LONG,
+  CONFIG_CYD_22C,
+  CONFIG_CYD_24C,
+  CONFIG_CYD_128,
+  CONFIG_CYD_35C,
+  CONFIG_CYD_518,
+  CONFIG_CYD_543,
+  CONFIG_M5_CORE2,
+  CONFIG_M5_CORES3,
+  CONFIG_M5_PAPER,
+  CONFIG_WT32_SC01_PLUS,
+  CONFIG_MAKERFABS_480x480,
+  CONFIG_MAKERFABS_320x480,
+  CONFIG_COUNT
+};
+// structure holding the configurations
+typedef struct bbct_config_tag {
+  int8_t i8SDA, i8SCL, i8IRQ, i8RST;
+} BBCT_CONFIG;
 
 enum {
   CT_TYPE_UNKNOWN = 0,
@@ -121,7 +157,12 @@ public:
 //    ~BBCapTouch() { Wire.end(); }
     ~BBCapTouch() { myWire->end(); }
 
+#ifdef ARDUINO
+    int init(int iConfigName);
     int init(int iSDA, int iSCL, int iRST=-1, int iINT=-1, uint32_t u32Speed=400000, TwoWire* _myWire=&Wire);
+#else
+    int init(int iSDA, int iSCL, int iRST=-1, int iINT=-1, uint32_t u32Speed=400000);
+#endif
     int getSamples(TOUCHINFO *pTI);
     int sensorType(void);
     int setOrientation(int iOrientation, int iWidth, int iHeight);
@@ -134,8 +175,12 @@ private:
     int _iType;
     int _iOrientation, _iWidth, _iHeight;
     MXTDATA _mxtdata;
+#ifdef ARDUINO
     TwoWire* myWire;
-
+#else
+    void pinMode(uint8_t u8Pin, uint8_t u8Mode);
+    void digitalWrite(uint8_t u8Pin, uint8_t u8State);
+#endif
     int initMXT(void);
     void fixSamples(TOUCHINFO *pTI);
     bool I2CTest(uint8_t u8Addr);

@@ -15,13 +15,56 @@
 //===========================================================================
 #include "bb_captouch.h"
 
+static const BBCT_CONFIG _configs[] = {
+       // sda, scl, irq, rst
+       {21, 22, 7, 23}, // CONFIG_T_QT_C6
+       {19, 20, -1, 38}, // CONFIG_CYD_550
+       {5, 6, 7, 13}, // T-Display S3 Pro
+       {15, 20, 11, 16}, // T-Display-S3-Long
+       {21, 22, -1, -1}, // CYD_22C
+       {33, 32, 21, 25}, // CYD_24C
+       {4, 5, 0, 1}, // CYD_128
+       {33, 32, 21, 25}, // CYD_35C
+       {7, 8, 41, 40}, // CYD_518
+       {8, 4, 3, -1}, // CYD_543
+       {21, 22, 39, -1}, // M5_CORE2
+       {12, 11, -1, -1}, // M5_CORES3
+       {21, 22, 36, -1}, // M5_PAPER
+       {6, 5 ,7, -1}, // WT32_SC01_PLUS
+       {17, 18, -1, 38}, // MakerFabs 4" 480x480
+       {38,39,40,-1}, // MakerFabs 3.5" 320x480
+       {0,0,0,0}
+    };
+
+#ifndef ARDUINO
+void BBCapTouch::pinMode(uint8_t u8Pin, uint8_t u8Mode)
+{
+    gpio_config_t io_conf = {};
+
+    io_conf.intr_type = GPIO_INTR_DISABLE; //disable interrupt
+    //bit mask of the pins that you want to set,e.g.GPIO18/19
+    io_conf.pin_bit_mask = (1 << u8Pin);
+    io_conf.pull_down_en = 0; //disable pull-down mode
+    io_conf.pull_up_en = 0; //disable pull-up mode
+    if (u8Mode == INPUT) {
+        io_conf.mode = GPIO_MODE_INPUT;
+    } else { // must be output
+        io_conf.mode = GPIO_MODE_OUTPUT;
+    }
+    gpio_config(&io_conf); //configure GPIO with the given settings
+} /* pinMode() */
+void BBCapTouch::digitalWrite(uint8_t u8Pin, uint8_t u8State)
+{
+    gpio_set_level(u8Pin, u8State);
+} /* digitalWrite() */
+#endif // !ARDUINO
 void BBCapTouch::reset(int iRST)
 {
      pinMode(iRST, OUTPUT);
      digitalWrite(iRST, LOW);
      delay(100);
      digitalWrite(iRST, HIGH);
-     delay(100);
+     delay(250);
 }  /* reset() */
 
 //
@@ -88,15 +131,37 @@ Serial.printf("init success, count offset = %d\n", _mxtdata.t44_message_count_ad
 // Initialize the library
 // It only needs to initialize the I2C interface; the chip is ready
 //
+#ifdef ARDUINO
 int BBCapTouch::init(int iSDA, int iSCL, int iRST, int iINT, uint32_t u32Speed, TwoWire* _myWire)
+#else
+int BBCapTouch::init(int iSDA, int iSCL, int iRST, int iINT, uint32_t u32Speed)
+#endif
 {
 uint8_t ucTemp[4];
 
+#ifdef ARDUINO
     myWire = _myWire;
     myWire->begin(iSDA, iSCL); // this is specific to ESP32 MCUs
     myWire->setClock(u32Speed);
     myWire->setTimeout(100);
+#else
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = iSDA,
+        .scl_io_num = iSCL,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = u32Speed,
+    };
+    i2c_driver_delete(I2C_NUM_0); // remove driver (if installed)
+    i2c_param_config(I2C_NUM_0, &conf); // configure I2C device 0
+    i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0); // configure with no send or receive buffers
+#endif
     _iType = CT_TYPE_UNKNOWN;
+
+    if (iRST != -1) {
+       reset(iRST);
+    }
 
 #ifdef FUTURE
     if (I2CTest(AXS15231_ADDR)) {
@@ -155,9 +220,6 @@ uint8_t ucTemp[4];
     } else if (I2CTest(FT6X36_ADDR)) {
        _iType = CT_TYPE_FT6X36;
        _iAddr = FT6X36_ADDR;
-       if (iRST != -1) {
-          reset(iRST);
-       }
     } else if (I2CTest(CST820_ADDR)) {
        _iType = CT_TYPE_CST820;
        _iAddr = CST820_ADDR;
@@ -165,10 +227,31 @@ uint8_t ucTemp[4];
           reset(iRST);
        }
     } else {
+#ifdef ARDUINO
        myWire->end();
+#else
+       i2c_driver_delete(I2C_NUM_0);
+#endif
        return CT_ERROR; // no device found
     }
     return CT_SUCCESS;
+} /* init() */
+
+// Initialize the touch controller from a pre-defined configuration name
+int BBCapTouch::init(int iConfigName)
+{
+   if (iConfigName < 0 || iConfigName >= CONFIG_COUNT) {
+       return CT_ERROR;
+   }
+   return init(_configs[iConfigName].i8SDA,
+               _configs[iConfigName].i8SCL,
+               _configs[iConfigName].i8RST,
+               _configs[iConfigName].i8IRQ,
+#ifdef ARDUINO
+               100000, &Wire);
+#else
+               100000);
+#endif
 } /* init() */
 //
 // Test if an I2C device is monitoring an address
@@ -176,10 +259,14 @@ uint8_t ucTemp[4];
 //
 bool BBCapTouch::I2CTest(uint8_t u8Addr)
 {
-
   // Check if a device acknowledges the address.
+#ifdef ARDUINO
   myWire->beginTransmission(u8Addr);
   return(myWire->endTransmission(true) == 0);
+#else // allow 100ms for device to respond
+    uint8_t c = 0;
+    return (i2c_master_write_to_device(I2C_NUM_0, u8Addr, &c, 1, 10) == ESP_OK);
+#endif
 } /* I2CTest() */
 //
 // Write I2C data
@@ -190,9 +277,13 @@ int BBCapTouch::I2CWrite(uint8_t u8Addr, uint8_t *pData, int iLen)
 {
   int rc = 0;
 
+#ifdef ARDUINO
     myWire->beginTransmission(u8Addr);
     myWire->write(pData, (uint8_t)iLen);
     rc = !myWire->endTransmission();
+#else
+    rc = (i2c_master_write_to_device(I2C_NUM_0, u8Addr, pData, iLen, 100) == ESP_OK);
+#endif
     return rc;
 } /* I2CWrite() */
 //
@@ -202,6 +293,7 @@ int BBCapTouch::I2CReadRegister16(uint8_t u8Addr, uint16_t u16Register, uint8_t 
 {
   int i = 0;
 
+#ifdef ARDUINO
   myWire->beginTransmission(u8Addr);
   if (_iType == CT_TYPE_MXT144) { // little endian
     myWire->write((uint8_t)u16Register); // low byte
@@ -216,6 +308,21 @@ int BBCapTouch::I2CReadRegister16(uint8_t u8Addr, uint16_t u16Register, uint8_t 
   {
       pData[i++] = myWire->read();
   }
+#else
+    uint8_t ucTemp[4];
+    int rc;
+    if (_iType == CT_TYPE_MXT144) { // little endian
+        ucTemp[1] = (uint8_t)(u16Register>>8); // high byte
+        ucTemp[0] = (uint8_t)u16Register; // low byte
+    } else {
+        ucTemp[0] = (uint8_t)(u16Register>>8); // high byte
+        ucTemp[1] = (uint8_t)u16Register; // low byte
+    }
+    i2c_master_write_read_device(I2C_NUM_0, u8Addr, ucTemp, 2, pData, iLen, 100);
+    if (rc == ESP_OK) {
+            i = iLen;
+    }
+#endif
   return i;
 
 } /* I2CReadRegister16() */
@@ -228,6 +335,7 @@ int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pDa
   int rc;
   int i = 0;
 
+#ifdef ARDUINO
   myWire->beginTransmission(u8Addr);
   myWire->write(u8Register);
   myWire->endTransmission();
@@ -237,6 +345,10 @@ int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pDa
   {
       pData[i++] = myWire->read();
   }
+#else
+    rc = i2c_master_write_read_device(I2C_NUM_0, u8Addr, &u8Register, 1, pData, iLen, 100);
+    i = (rc == ESP_OK);
+#endif
   return i;
 } /* I2CReadRegister() */
 //
@@ -244,14 +356,19 @@ int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pDa
 //
 int BBCapTouch::I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen)
 {
-  int rc;
   int i = 0;
 
+#ifdef ARDUINO
   myWire->requestFrom(u8Addr, (uint8_t)iLen);
   while (i < iLen)
   {
      pData[i++] = myWire->read();
   }
+#else
+    int rc;
+    rc = i2c_master_read_from_device(I2C_NUM_0, u8Addr, pData, iLen, 100);
+    i = (rc == ESP_OK) ? iLen : 0;
+#endif
   return i;
 } /* I2CRead() */
 //
@@ -349,7 +466,7 @@ int i, j, rc;
  
     if (_iType == CT_TYPE_CST226) {
         i = I2CReadRegister(_iAddr, 0, ucTemp, 28); // read the whole block of regs
-      Serial.printf("I2CReadRegister returned %d\n", i);
+//      Serial.printf("I2CReadRegister returned %d\n", i);
 #ifdef FUTURE
         if (ucTemp[0] == 0x83 && ucTemp[1] == 0x17 && ucTemp[5] == 0x80) {
         // home button pressed
@@ -368,7 +485,7 @@ int i, j, rc;
 #endif
         c = 1; // debug
         pTI->count = c;
-        Serial.printf("count = %d\n", c);
+       // Serial.printf("count = %d\n", c);
         j = 0;
         for (i=0; i<c; i++) {
            pTI->x[i] = (uint16_t)((ucTemp[j+1] << 4) | ((ucTemp[j+3] >> 4) & 0xf));
