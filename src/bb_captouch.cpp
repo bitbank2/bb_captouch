@@ -33,6 +33,7 @@ static const BBCT_CONFIG _configs[] = {
        {6, 5 ,7, -1}, // WT32_SC01_PLUS
        {17, 18, -1, 38}, // MakerFabs 4" 480x480
        {38,39,40,-1}, // MakerFabs 3.5" 320x480
+       {7, 6, 9, 8}, // CONFIG_T_DISPLAY_S3_AMOLED (1.64")
        {0,0,0,0}
     };
 

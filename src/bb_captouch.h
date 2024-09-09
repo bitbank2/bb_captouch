@@ -55,6 +55,7 @@ enum {
   CONFIG_WT32_SC01_PLUS,
   CONFIG_MAKERFABS_480x480,
   CONFIG_MAKERFABS_320x480,
+  CONFIG_T_DISPLAY_S3_AMOLED,
   CONFIG_COUNT
 };
 // structure holding the configurations
