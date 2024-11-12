@@ -76,9 +76,8 @@ enum {
 
 #define GT911_ADDR1 0x5D
 #define GT911_ADDR2 0x14
-#ifndef FT6X36_ADDR
-#define FT6X36_ADDR 0x38
-#endif
+#define FT6X36_ADDR1 0x38
+#define FT6X36_ADDR2 0x48
 #define CST820_ADDR 0x15
 #define CST226_ADDR 0x5A
 #define MXT144_ADDR 0x4A

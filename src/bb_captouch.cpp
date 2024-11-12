@@ -216,9 +216,12 @@ uint8_t ucTemp[4];
        } else if (I2CTest(GT911_ADDR2)) {
           _iAddr = GT911_ADDR2;
        }
-    } else if (I2CTest(FT6X36_ADDR)) {
+    } else if (I2CTest(FT6X36_ADDR0)) {
        _iType = CT_TYPE_FT6X36;
-       _iAddr = FT6X36_ADDR;
+       _iAddr = FT6X36_ADDR0;
+    } else if (I2CTest(FT6X36_ADDR1)) {
+       _iType = CT_TYPE_FT6X36;
+       _iAddr = FT6X36_ADDR1;
     } else if (I2CTest(CST820_ADDR)) {
        _iType = CT_TYPE_CST820;
        _iAddr = CST820_ADDR;
