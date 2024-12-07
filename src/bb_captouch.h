@@ -71,6 +71,7 @@ enum {
   CT_TYPE_CST226,
   CT_TYPE_MXT144,
   CT_TYPE_AXS15231,
+  CT_TYPE_TMA445,
   CT_TYPE_COUNT
 };
 
@@ -81,6 +82,7 @@ enum {
 #define CST820_ADDR 0x15
 #define CST226_ADDR 0x5A
 #define MXT144_ADDR 0x4A
+#define TMA445_ADDR 0x24
 #define AXS15231_ADDR 0x3B
 
 // CST8xx gestures
@@ -94,6 +96,43 @@ enum {
   GESTURE_DOUBLE_CLICK = 0x0B,
   GESTURE_LONG_PRESS = 0x0C
 };
+
+// TMA445 Security KEY
+static uint8_t tma445_key[] = {0x00, 0x00, 0xFF, 0xA5, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+    
+/* TrueTouch Standard Product Gen3 (Txx3xx) interface definition */
+typedef struct cyttsp_xydata_tag {
+	uint8_t hst_mode;
+	uint8_t tt_mode;
+	uint8_t tt_stat;
+	uint16_t x1 __attribute__ ((packed));
+	uint16_t y1 __attribute__ ((packed));
+	uint8_t z1;
+	uint8_t touch12_id;
+	uint16_t x2 __attribute__ ((packed));
+	uint16_t y2 __attribute__ ((packed));
+	uint8_t z2;
+} cyttsp_xydata;
+#define CY_HNDSHK_BIT 0x80
+typedef struct cyttsp_bootloader_data_tag {
+	uint8_t bl_file;
+	uint8_t bl_status;
+	uint8_t bl_error;
+	uint8_t blver_hi;
+	uint8_t blver_lo;
+	uint8_t bld_blver_hi;
+	uint8_t bld_blver_lo;
+	uint8_t ttspver_hi;
+	uint8_t ttspver_lo;
+	uint8_t appid_hi;
+	uint8_t appid_lo;
+	uint8_t appver_hi;
+	uint8_t appver_lo;
+	uint8_t cid_0;
+	uint8_t cid_1;
+	uint8_t cid_2;
+} cyttsp_bootloader_data;
+
 
 typedef struct mxt_data_tag {
     uint16_t t2_encryption_status_address;
@@ -127,6 +166,7 @@ typedef struct mxt_object_tag {
 #define GT911_CONFIG_FRESH 0x8100
 #define GT911_CONFIG_SIZE 0xb9
 #define GT911_CONFIG_START 0x8047
+#define GT911_ENTER_SLEEP 0x8040
 
 // FT6x36 registers
 #define TOUCH_REG_STATUS 0x02
@@ -168,6 +208,8 @@ public:
     int getSamples(TOUCHINFO *pTI);
     int sensorType(void);
     int setOrientation(int iOrientation, int iWidth, int iHeight);
+    int sleep(void);
+    int wake(void);
 
 protected:
     void reset(int iResetPin);
@@ -177,6 +219,8 @@ private:
     int _iType;
     int _iOrientation, _iWidth, _iHeight;
     MXTDATA _mxtdata;
+    int _iINT; // interrupt GPIO pin needed for sleep/wake of GT911
+    int _iRST; // reset GPIO needed for AXS15206 to wake from deep sleep
 #ifdef ARDUINO
     TwoWire* myWire;
 #else

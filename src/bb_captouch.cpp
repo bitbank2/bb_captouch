@@ -140,6 +140,8 @@ int BBCapTouch::init(int iSDA, int iSCL, int iRST, int iINT, uint32_t u32Speed)
 {
 uint8_t ucTemp[4];
 
+    _iINT = iINT; // save for sleep/wake of GT911
+    _iRST = iRST; // save for sleep/wake of AXS15231
 #ifdef ARDUINO
     myWire = _myWire;
     myWire->begin(iSDA, iSCL); // this is specific to ESP32 MCUs
@@ -175,6 +177,34 @@ uint8_t ucTemp[4];
     } // AXS15231
 #endif
 
+    if (I2CTest(TMA445_ADDR)) {
+       _iType = CT_TYPE_TMA445;
+       _iAddr = TMA445_ADDR;
+//       if (iINT != -1) {
+//          pinMode(iINT, INPUT_PULLUP);
+//       }
+       // send soft reset
+       ucTemp[0] = 0;
+       ucTemp[1] = 1;
+       I2CWrite(_iAddr, ucTemp, 2);
+       delay(50);
+       // send security key
+       I2CWrite(_iAddr, tma445_key, sizeof(tma445_key));
+       delay(88);
+
+       uint8_t tries = 0;
+       cyttsp_bootloader_data  bl_data = {};
+       do {
+        delay(20);
+        I2CRead(_iAddr, (uint8_t *)&bl_data, sizeof(bl_data));
+       } while (bl_data.bl_status & 0x10 && tries++ < 10); // while bootloader mode
+       if (tries >= 10) Serial.println("bootloader mode timed out");
+       // set OP mode
+       ucTemp[0] = 0;
+       ucTemp[1] = 0; // start op mode
+       I2CWrite(_iAddr, ucTemp, 0);
+       return CT_SUCCESS;
+    }
     if (I2CTest(MXT144_ADDR)) {
        _iType = CT_TYPE_MXT144;
        _iAddr = MXT144_ADDR;
@@ -419,6 +449,29 @@ int i, j, rc;
        return 0;
     pTI->count = 0;
 
+    if (_iType == CT_TYPE_TMA445) {
+        uint8_t hst_mode;
+        I2CReadRegister(_iAddr, 0, ucTemp, 14); // read up to 2 touch points
+        pTI->count = ucTemp[2]; // touch point count
+        if (pTI->count > 0) {
+            pTI->y[0] = (ucTemp[5]*256) + ucTemp[6];
+            pTI->x[0] = (ucTemp[3]*256) + ucTemp[4];
+            pTI->area[0] = ucTemp[7];
+            if (pTI->count == 2) { // get second touch point
+                pTI->y[1] = (ucTemp[11]*256) + ucTemp[12];
+                pTI->x[1] = (ucTemp[9]*256) + ucTemp[10];
+                pTI->area[1] = ucTemp[13];
+            }
+            // do handshake
+            I2CReadRegister(_iAddr, 0, &hst_mode, 1);
+            hst_mode ^= CY_HNDSHK_BIT; // toggle handshake bit
+            ucTemp[0] = 0;
+            ucTemp[1] = hst_mode; // send it back
+            I2CWrite(_iAddr, ucTemp, 2);
+            return 1;
+        }
+        return 0;
+    }
     if (_iType == CT_TYPE_MXT144) {
        if (!_mxtdata.t44_message_count_address) {
           return 0; // No message offset, so we can't read anything :(
@@ -586,3 +639,60 @@ int BBCapTouch::sensorType(void)
 {
    return _iType;
 } /* type() */
+
+int BBCapTouch::sleep(void)
+{
+uint8_t ucTemp[8];
+
+    if (_iType == CT_TYPE_AXS15231) {
+        ucTemp[0] = 0x90; // enter deep sleep
+        ucTemp[1] = 0xa5;
+        ucTemp[2] = 0x5a;
+        ucTemp[3] = 0x15;
+        ucTemp[4] = 0x23;
+        I2CWrite(_iAddr, ucTemp, 5);
+        return CT_SUCCESS;
+    }
+    if (_iType == CT_TYPE_GT911 && _iINT != -1) {
+        pinMode(_iINT, OUTPUT);
+        digitalWrite(_iINT, 0); // setting interrupt pin low to prepare sleep mode
+        ucTemp[0] = (uint8_t)(GT911_ENTER_SLEEP >> 8);
+        ucTemp[1] = (uint8_t)GT911_ENTER_SLEEP;
+        ucTemp[2] = 0x05; //??
+        I2CWrite(_iAddr, ucTemp, 3); // enter sleep mode
+        return CT_SUCCESS;
+    }
+    if (_iType == CT_TYPE_CST226) {
+        ucTemp[0] = 0xd1;
+        ucTemp[1] = 0x05;
+        I2CWrite(_iAddr, ucTemp, 2);
+        return CT_SUCCESS;
+    }
+    return CT_ERROR;
+} /* sleep() */
+
+int BBCapTouch::wake(void)
+{
+uint8_t ucTemp[4];
+
+    if (_iType == CT_TYPE_AXS15231) {
+        digitalWrite(_iRST, 0);
+        delay(50);
+        digitalWrite(_iRST, 1);
+        return CT_SUCCESS;
+    }
+    if (_iType == CT_TYPE_GT911 && _iINT != -1) {
+        digitalWrite(_iINT, 1); // wake up the controller
+        delay(5); // allow it time to wake
+        pinMode(_iINT, INPUT); // change pin mode back to floating
+    }
+    if (_iType == CT_TYPE_CST226) {
+        ucTemp[0] = 0xd1;
+        ucTemp[1] = 0x06; 
+        I2CWrite(_iAddr, ucTemp, 2);
+        return CT_SUCCESS;
+    }
+    return CT_ERROR;
+} /* wake() */
+
+
