@@ -577,7 +577,7 @@ int i, j, rc;
            return 0;
        }
        i = ucTemp[0]; // number of touch points available
-       if (i >= 1) { // get data
+       if (i >= 1 && i <= 5) { // get data
            rc = I2CReadRegister(_iAddr, TOUCH_REG_XH, ucTemp, 6*i); // read X+Y position(s)
            if ((ucTemp[0] & 0x40) == 0 && (ucTemp[2] & 0xf0) != 0xf0) { // finger is down
                pTI->x[0] = ((ucTemp[0] & 0xf) << 8) | ucTemp[1];
