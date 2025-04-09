@@ -39,24 +39,31 @@
 // add new values to the end
 //
 enum {
-  CONFIG_T_QT_C6=0,
-  CONFIG_CYD_550,
-  CONFIG_T_DISPLAY_S3_PRO,
-  CONFIG_T_DISPLAY_S3_LONG,
-  CONFIG_CYD_22C,
-  CONFIG_CYD_24C,
-  CONFIG_CYD_128,
-  CONFIG_CYD_35C,
-  CONFIG_CYD_518,
-  CONFIG_CYD_543,
-  CONFIG_M5_CORE2,
-  CONFIG_M5_CORES3,
-  CONFIG_M5_PAPER,
-  CONFIG_WT32_SC01_PLUS,
-  CONFIG_MAKERFABS_480x480,
-  CONFIG_MAKERFABS_320x480,
-  CONFIG_T_DISPLAY_S3_AMOLED,
-  CONFIG_COUNT
+  TOUCH_T_QT_C6=0,
+  TOUCH_CYD_550,
+  TOUCH_T_DISPLAY_S3_PRO,
+  TOUCH_T_DISPLAY_S3_LONG,
+  TOUCH_CYD_22C,
+  TOUCH_CYD_24C,
+  TOUCH_CYD_128,
+  TOUCH_CYD_35C,
+  TOUCH_CYD_518,
+  TOUCH_CYD_543,
+  TOUCH_M5_CORE2,
+  TOUCH_M5_CORES3,
+  TOUCH_M5_PAPER,
+  TOUCH_WT32_SC01_PLUS,
+  TOUCH_MAKERFABS_480x480,
+  TOUCH_MAKERFABS_320x480,
+  TOUCH_T_DISPLAY_S3_AMOLED,
+  TOUCH_WS_AMOLED_18,
+  TOUCH_M5_PAPERS3,
+  TOUCH_WS_ROUND_146,
+  TOUCH_WS_AMOLED_241,
+  TOUCH_WS_LCD_169,
+  TOUCH_VIEWE_2432,
+  TOUCH_T_DISPLAY_S3_AMOLED_164,
+  TOUCH_COUNT
 };
 // structure holding the configurations
 typedef struct bbct_config_tag {
@@ -72,15 +79,19 @@ enum {
   CT_TYPE_MXT144,
   CT_TYPE_AXS15231,
   CT_TYPE_TMA445,
+  CT_TYPE_SPD2010,
+  CT_TYPE_CHSC6540,
   CT_TYPE_COUNT
 };
 
+#define SPD2010_ADDR 0x53
 #define GT911_ADDR1 0x5D
 #define GT911_ADDR2 0x14
 #define FT6X36_ADDR1 0x38
 #define FT6X36_ADDR2 0x48
 #define CST820_ADDR 0x15
 #define CST226_ADDR 0x5A
+#define CHSC6540_ADDR 0x2E
 #define MXT144_ADDR 0x4A
 #define TMA445_ADDR 0x24
 #define AXS15231_ADDR 0x3B
@@ -195,7 +206,7 @@ typedef struct _fttouchinfo
 class BBCapTouch
 {
 public:
-    BBCapTouch() { _iOrientation = 0;}
+    BBCapTouch() { _iOrientation = 0; _iType = CT_TYPE_UNKNOWN;}
 //    ~BBCapTouch() { Wire.end(); }
     ~BBCapTouch() { myWire->end(); }
 
@@ -206,6 +217,7 @@ public:
     int init(int iSDA, int iSCL, int iRST=-1, int iINT=-1, uint32_t u32Speed=400000);
 #endif
     int getSamples(TOUCHINFO *pTI);
+    uint8_t interruptPin(void) {return (uint8_t)_iINT;}
     int sensorType(void);
     int setOrientation(int iOrientation, int iWidth, int iHeight);
     int sleep(void);
@@ -234,5 +246,10 @@ private:
     int I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pData, int iLen);
     int I2CReadRegister16(uint8_t u8Addr, uint16_t u16Register, uint8_t *pData, int iLen);
     int I2CWrite(uint8_t u8Addr, uint8_t *pData, int iLen);
+    void SPD2010ClearInt(void);
+    void SPD2010CPUStart(void);
+    uint8_t SPD2010Status(int *iNextLen);
+    void SPD2010TouchStart(void);
+    void SPD2010PointMode(void);
 }; // class BBCapTouch
 #endif // __BB_CAPTOUCH__

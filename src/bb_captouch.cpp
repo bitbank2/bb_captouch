@@ -17,8 +17,8 @@
 
 static const BBCT_CONFIG _configs[] = {
        // sda, scl, irq, rst
-       {21, 22, 7, 23}, // CONFIG_T_QT_C6
-       {19, 20, -1, 38}, // CONFIG_CYD_550
+       {21, 22, 7, 23}, // TOUCH_T_QT_C6
+       {19, 20, -1, 38}, // TOUCH_CYD_550
        {5, 6, 7, 13}, // T-Display S3 Pro
        {15, 20, 11, 16}, // T-Display-S3-Long
        {21, 22, -1, -1}, // CYD_22C
@@ -33,7 +33,14 @@ static const BBCT_CONFIG _configs[] = {
        {6, 5 ,7, -1}, // WT32_SC01_PLUS
        {17, 18, -1, 38}, // MakerFabs 4" 480x480
        {38,39,40,-1}, // MakerFabs 3.5" 320x480
-       {7, 6, 9, 8}, // CONFIG_T_DISPLAY_S3_AMOLED (1.64")
+       {7, 6, 9, 8}, // TOUCH_T_DISPLAY_S3_AMOLED (1.64")
+       {15, 14, 21, -1}, // TOUCH_WS_AMOLED_18 (Waveshare 1.8" 368x448 AMOLED)
+       {41, 42, 48, -1}, // TOUCH_M5_PAPERS3
+       {11, 10, 4, -1}, // TOUCH_WS_ROUND_146
+       {47,48,-1,3}, // TOUCH_WS_AMOLED_241
+       {11,10,14,13}, // TOUCH_WS_LCD_169
+       {1,3,4,2}, // TOUCH_VIEWE_2432
+       {7, 6, 9, 8}, // TOUCH_T_DISPLAY_S3_AMOLED_164
        {0,0,0,0}
     };
 
@@ -86,10 +93,10 @@ uint16_t u16, u16Offset;
    u16Offset = 7; // starting offset of first object
    // Read the objects one by one to get the memory offests to the info we will need
    iReportID = 1;
-   Serial.printf("object count = %d\n", iObjCount);
+  // Serial.printf("object count = %d\n", iObjCount);
    for (i=0; i<iObjCount; i++) {
       I2CReadRegister16(_iAddr, u16Offset, ucTemp, 6);
-      Serial.printf("object %d, type %d\n", i, ucTemp[0]);
+      //Serial.printf("object %d, type %d\n", i, ucTemp[0]);
       u16 = ucTemp[1] | (ucTemp[2] << 8);
       switch (ucTemp[0]) {
          case 2:
@@ -124,7 +131,7 @@ uint16_t u16, u16Offset;
       u16Offset += 6; // size in bytes of an object table
       iReportID += ucTemp[5] * (ucTemp[4] + 1);
    } // for each report
-Serial.printf("init success, count offset = %d\n", _mxtdata.t44_message_count_address);
+//Serial.printf("init success, count offset = %d\n", _mxtdata.t44_message_count_address);
    return CT_SUCCESS;
 } /* initMXT() */
 
@@ -146,7 +153,7 @@ uint8_t ucTemp[4];
     myWire = _myWire;
     myWire->begin(iSDA, iSCL); // this is specific to ESP32 MCUs
     myWire->setClock(u32Speed);
-    myWire->setTimeout(100);
+    myWire->setTimeout(1000);
 #else
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
@@ -177,6 +184,14 @@ uint8_t ucTemp[4];
     } // AXS15231
 #endif
 
+    if (I2CTest(SPD2010_ADDR)) {
+        _iType = CT_TYPE_SPD2010;
+        _iAddr = SPD2010_ADDR;
+        if (iINT != -1) {
+            pinMode(iINT, INPUT_PULLUP);
+        }
+        return CT_SUCCESS;
+    }
     if (I2CTest(TMA445_ADDR)) {
        _iType = CT_TYPE_TMA445;
        _iAddr = TMA445_ADDR;
@@ -202,7 +217,7 @@ uint8_t ucTemp[4];
        // set OP mode
        ucTemp[0] = 0;
        ucTemp[1] = 0; // start op mode
-       I2CWrite(_iAddr, ucTemp, 0);
+       I2CWrite(_iAddr, ucTemp, 2);
        return CT_SUCCESS;
     }
     if (I2CTest(MXT144_ADDR)) {
@@ -215,6 +230,16 @@ uint8_t ucTemp[4];
           reset(iRST);
        }
        return initMXT();
+    }
+    if (I2CTest(CHSC6540_ADDR)) {
+       _iType = CT_TYPE_CHSC6540;
+       _iAddr = CHSC6540_ADDR;
+       if (iINT != -1) {
+          pinMode(iINT, INPUT);
+       }
+       ucTemp[0] = ucTemp[1] = 0x5a; // set interrupt mode
+       I2CWrite(_iAddr, ucTemp, 2);
+       return CT_SUCCESS;
     }
     if (I2CTest(CST226_ADDR)) {
        _iType = CT_TYPE_CST226;
@@ -272,17 +297,51 @@ uint8_t ucTemp[4];
 // Initialize the touch controller from a pre-defined configuration name
 int BBCapTouch::init(int iConfigName)
 {
-   if (iConfigName < 0 || iConfigName >= CONFIG_COUNT) {
+const BBCT_CONFIG *pC = &_configs[iConfigName];
+
+   if (iConfigName < 0 || iConfigName >= TOUCH_COUNT) {
        return CT_ERROR;
    }
-   return init(_configs[iConfigName].i8SDA,
-               _configs[iConfigName].i8SCL,
-               _configs[iConfigName].i8RST,
-               _configs[iConfigName].i8IRQ,
+
+   if (iConfigName == TOUCH_WS_AMOLED_241) { // touch is rotated
+       _iOrientation = 270;
+       _iWidth = 450;
+       _iHeight = 600;
+
+   }
+   if (iConfigName == TOUCH_WS_AMOLED_18 || iConfigName == TOUCH_WS_ROUND_146) {
+       // need to release the RESET line which is controlled by an
+       // I/O expander (TCA9554)
+       uint8_t ucEXIO;
+       if (iConfigName == TOUCH_WS_AMOLED_18) ucEXIO = 6; // touch reset (AMOLED 1.8)
+       else ucEXIO = 1; // touch reset (1.46" round)
+       Wire.end();
+       Wire.begin(pC->i8SDA, pC->i8SCL);
+       Wire.beginTransmission(0x20);
+       Wire.write(1); // output port register
+       Wire.write(~ucEXIO); // set touch controller reset low
+       Wire.write(0); // polarity inversion all disabled
+       Wire.write(~7); // enable P0+P1+P2 as an output (connected to RESET)
+       Wire.endTransmission();
+       delay(50);
+       Wire.beginTransmission(0x20);
+       Wire.write(1); // output port register
+       Wire.write(0xff); // set all outputs high (disable resets)
+       Wire.endTransmission();
+       delay(50);
+       if (iConfigName == TOUCH_WS_AMOLED_18) {
+           Wire.beginTransmission(0x38);
+           Wire.write(0xa5); // power mode
+           Wire.write(0); // active
+           Wire.endTransmission();
+       }
+       Wire.end();
+   }
+   return init(pC->i8SDA, pC->i8SCL, pC->i8RST, pC->i8IRQ,
 #ifdef ARDUINO
-               100000, &Wire);
+               400000, &Wire);
 #else
-               100000);
+               400000);
 #endif
 } /* init() */
 //
@@ -434,6 +493,53 @@ int i, x, y;
        }
    }
 } /* fixSamples() */
+void BBCapTouch::SPD2010ClearInt(void)
+{
+    uint8_t ucTemp[4];
+    ucTemp[0] = 2;
+    ucTemp[1] = 0;
+    ucTemp[2] = 1;
+    ucTemp[3] = 0;
+    I2CWrite(_iAddr, ucTemp, 4);
+} /* SPD2010ClearInt() */
+
+void BBCapTouch::SPD2010CPUStart(void)
+{
+    uint8_t ucTemp[4];
+    ucTemp[0] = 4;
+    ucTemp[1] = 0;
+    ucTemp[2] = 1;
+    ucTemp[3] = 0;
+    I2CWrite(_iAddr, ucTemp, 4);
+} /* SPD2010CPUStart() */
+
+uint8_t BBCapTouch::SPD2010Status(int *iNextLen)
+{
+    uint8_t ucTemp[8];
+    I2CReadRegister16(_iAddr, 0xfc02, ucTemp, 8);
+    *iNextLen = (ucTemp[3] << 8) | ucTemp[2];
+    return ucTemp[5];
+} /* SPD2010Status() */
+
+void BBCapTouch::SPD2010TouchStart(void)
+{
+    uint8_t ucTemp[4];
+    ucTemp[0] = 0x46;
+    ucTemp[1] = 0x0;
+    ucTemp[2] = 0x0;
+    ucTemp[3] = 0x0;
+    I2CWrite(_iAddr, ucTemp, 4);
+} /* SPD2010TouchStart() */
+
+void BBCapTouch::SPD2010PointMode(void)
+{
+    uint8_t ucTemp[4];
+    ucTemp[0] = 0x50;
+    ucTemp[1] = 0x0;
+    ucTemp[2] = 0x0;
+    ucTemp[3] = 0x0;
+    I2CWrite(_iAddr, ucTemp, 4);
+} /* SPD2010PointMode() */
 
 //
 // Read the touch points
@@ -443,12 +549,70 @@ int i, x, y;
 int BBCapTouch::getSamples(TOUCHINFO *pTI)
 {
 uint8_t c, *s, ucTemp[32];
-int i, j, rc;
+int i, j, rc = 0;
     
     if (!pTI)
        return 0;
     pTI->count = 0;
+    if (_iType == CT_TYPE_UNKNOWN) return 0; // library not initialized?
 
+    if (_iType == CT_TYPE_SPD2010) {
+        static int iNextLen = 0;
+        int iReadLen;
+        uint8_t ucStatus;
+        // first read the status
+        I2CReadRegister16(_iAddr, 0x2000, ucTemp, 4);
+        // Byte 0 has a bit field with the following info:
+        // 0 = point exists
+        // 1 = gesture
+        // 3 = aux, cytang
+        // Byte 1
+        // 3 = cpu run
+        // 4 = tint low
+        // 5 = tic in cpu
+        // 6 = tic in bios
+        // 7 = tic busy
+        iReadLen = (ucTemp[3]<<8) + ucTemp[2];
+       // Serial.printf("status byte 0: 0x%02x, 0x%02x, read len = %d\n", ucTemp[0], ucTemp[1], iReadLen);
+        if (ucTemp[1] & 0x40) { // tic in bios
+            SPD2010ClearInt(); // Write Clear TINT Command
+            SPD2010CPUStart(); // Write CPU Start Command
+        } else if (ucTemp[1] & 0x20) { // tic in cpu
+            SPD2010PointMode(); // Write Touch Change Command
+            SPD2010TouchStart(); // Write Touch Start Command
+            SPD2010ClearInt();
+        } else if ((ucTemp[1] & 8) && iReadLen == 0) { // cpu run
+            SPD2010ClearInt();
+        } else if (ucTemp[0] & 1 || ucTemp[0] & 2) { // point or gesture
+            uint8_t ucData[64]; // 4-byte header plus up to 10 fingers of 6 bytes each
+            I2CReadRegister16(_iAddr, 0x0003, ucData, iReadLen);
+         //   Serial.printf("readlen: %d, data[4]: 0x%02x\n", iReadLen, ucData[4]);
+            if (ucData[4] <= 0xa && ucTemp[0] & 1) { // check_id < 10 && point exists
+                rc = 1; // touch event
+                pTI->count = (iReadLen - 4)/6; // number of touch points
+                for (int i=0; i<pTI->count; i++) {
+                    int iOffset = i*6;
+                    pTI->x[i] = ((ucData[7+iOffset] & 0xf0) << 4) | ucData[5+iOffset];
+                    pTI->y[i] = ((ucData[7+iOffset] & 0x0f) << 8) | ucData[6+iOffset];
+                    pTI->area[i] = ucData[8+iOffset];
+                }
+            }
+            // gestures...
+      hdp_done_check:
+          /* Read HDP Status */
+            ucStatus = SPD2010Status(&iNextLen);
+//            Serial.printf("status: 0x%02\n", ucStatus);
+            if (ucStatus == 0x82) {
+                SPD2010ClearInt();
+            } else if (ucStatus == 0x00) { // Read HDP Remain Data
+               // Read_HDP_REMAIN_DATA(&tp_hdp_status);
+                goto hdp_done_check;
+            }
+        } else if (ucTemp[1] & 8 && ucTemp[0] & 8) { // cpu run && aux
+            SPD2010ClearInt();
+        }
+        return rc;
+    }
     if (_iType == CT_TYPE_TMA445) {
         uint8_t hst_mode;
         I2CReadRegister(_iAddr, 0, ucTemp, 14); // read up to 2 touch points
@@ -552,6 +716,22 @@ int i, j, rc;
         return 1;
     }
 
+    if (_iType == CT_TYPE_CHSC6540) {
+       if (digitalRead(_iINT) == LOW) {
+           I2CReadRegister(_iAddr, 2, ucTemp, 13); // read touch points
+           if (ucTemp[2] == 1 || ucTemp[2] == 2) {
+               pTI->count = ucTemp[2];
+               pTI->x[0] = ((ucTemp[3] & 0xf) << 8) | ucTemp[4];
+               pTI->y[0] = ((ucTemp[5] & 0xf) << 8) | ucTemp[6];
+               if (ucTemp[0] == 2) { // second touch point
+                   pTI->x[0] = ((ucTemp[9] & 0xf) << 8) | ucTemp[10];
+                   pTI->y[0] = ((ucTemp[11] & 0xf) << 8) | ucTemp[12];
+               }  
+               return 1;
+           }
+       }
+       return 0;
+    }
     if (_iType == CT_TYPE_CST820) {
        I2CReadRegister(_iAddr, CST820_TOUCH_REGS+1, ucTemp, 1); // read touch count
        if (ucTemp[0] < 1 || ucTemp[0] > 5) { // something went wrong
@@ -577,7 +757,7 @@ int i, j, rc;
            return 0;
        }
        i = ucTemp[0]; // number of touch points available
-       if (i >= 1) { // get data
+       if (i >= 1 && i <= 5) { // get data
            rc = I2CReadRegister(_iAddr, TOUCH_REG_XH, ucTemp, 6*i); // read X+Y position(s)
            if ((ucTemp[0] & 0x40) == 0 && (ucTemp[2] & 0xf0) != 0xf0) { // finger is down
                pTI->x[0] = ((ucTemp[0] & 0xf) << 8) | ucTemp[1];
