@@ -12,7 +12,7 @@ void setup()
   delay(3000); // allow time for CDC-Serial to start
 
 // The full list of device names can be found in bb_captouch.h
-  rc = bbct.init(CONFIG_WS_AMOLED_18);
+  rc = bbct.init(TOUCH_WS_AMOLED_18);
   if (rc == CT_SUCCESS) {
       Serial.printf("bb_captouch init success, type = %d\n", bbct.sensorType());
   } else {
