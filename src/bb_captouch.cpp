@@ -41,6 +41,7 @@ static const BBCT_CONFIG _configs[] = {
        {11,10,14,13}, // TOUCH_WS_LCD_169
        {1,3,4,2}, // TOUCH_VIEWE_2432
        {7, 6, 9, 8}, // TOUCH_T_DISPLAY_S3_AMOLED_164
+       {16,15,18,17}, // TOUCH_VPLAYER (ESP32-S3 + 1.69 280x240)
        {0,0,0,0}
     };
 

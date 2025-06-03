@@ -63,6 +63,7 @@ enum {
   TOUCH_WS_LCD_169,
   TOUCH_VIEWE_2432,
   TOUCH_T_DISPLAY_S3_AMOLED_164,
+  TOUCH_VPLAYER,
   TOUCH_COUNT
 };
 // structure holding the configurations
