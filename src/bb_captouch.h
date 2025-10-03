@@ -208,8 +208,9 @@ class BBCapTouch
 {
 public:
     BBCapTouch() { _iOrientation = 0; _iType = CT_TYPE_UNKNOWN;}
-//    ~BBCapTouch() { Wire.end(); }
+#ifdef ARDUINO
     ~BBCapTouch() { myWire->end(); }
+#endif
 
 #ifdef ARDUINO
     int init(int iConfigName);
