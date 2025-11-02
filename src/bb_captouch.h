@@ -23,8 +23,17 @@
 #else
 #define INPUT 0
 #define OUTPUT 1
+#define INPUT_PULLUP INPUT
+#define LOW 0
+#define HIGH 1
+#ifdef __LINUX__
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#else // must be ESP-IDF
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+#endif // __LINUX__
 #endif // ARDUINO
 
 #ifndef __BB_CAPTOUCH__
@@ -208,8 +217,9 @@ class BBCapTouch
 {
 public:
     BBCapTouch() { _iOrientation = 0; _iType = CT_TYPE_UNKNOWN;}
-//    ~BBCapTouch() { Wire.end(); }
+#ifndef __LINUX__
     ~BBCapTouch() { myWire->end(); }
+#endif
 
 #ifdef ARDUINO
     int init(int iConfigName);
@@ -234,6 +244,11 @@ private:
     MXTDATA _mxtdata;
     int _iINT; // interrupt GPIO pin needed for sleep/wake of GT911
     int _iRST; // reset GPIO needed for AXS15206 to wake from deep sleep
+#ifdef __LINUX__
+    int _file_i2c;
+    void delay(int iMS);
+    int digitalRead(uint8_t u8Pin);
+#endif
 #ifdef ARDUINO
     TwoWire* myWire;
 #else

@@ -15,6 +15,25 @@
 //===========================================================================
 #include "bb_captouch.h"
 
+#ifdef __LINUX__
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
+#include <gpiod.h>
+#include <math.h>
+#include <time.h>
+#ifndef CONSUMER
+#define CONSUMER "Consumer"
+#endif
+struct gpiod_chip *chip = NULL;
+#ifdef GPIOD_API
+struct gpiod_line *lines[64];
+#else
+struct gpiod_line_request *lines[64];
+#endif
+#endif // __LINUX__
+
 static const BBCT_CONFIG _configs[] = {
        // sda, scl, irq, rst
        {21, 22, 7, 23}, // TOUCH_T_QT_C6
@@ -46,6 +65,73 @@ static const BBCT_CONFIG _configs[] = {
     };
 
 #ifndef ARDUINO
+#ifdef __LINUX__
+void BBCapTouch::delay(int iMS)
+{
+  usleep(iMS * 1000);
+} /* delay() */ 
+
+int BBCapTouch::digitalRead(uint8_t iPin)
+{
+        if (lines[iPin] == 0) return 0;
+#ifdef GPIOD_API // 1.x (old) API
+  return gpiod_line_get_value(lines[iPin]);
+#else // 2.x (new)
+  return gpiod_line_request_get_value(lines[iPin], iPin) == GPIOD_LINE_VALUE_ACTIVE;
+#endif
+} /* digitalRead() */
+
+void BBCapTouch::pinMode(uint8_t iPin, uint8_t iMode)
+{
+#ifdef GPIOD_API // old 1.6 API
+   if (chip == NULL) {
+       chip = gpiod_chip_open_by_name("gpiochip0");
+   }
+   lines[iPin] = gpiod_chip_get_line(chip, iPin);
+   if (iMode == OUTPUT) {
+       gpiod_line_request_output(lines[iPin], CONSUMER, 0);
+   } else if (iMode == INPUT_PULLUP) {
+       gpiod_line_request_input_flags(lines[iPin], CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
+   } else { // plain input
+       gpiod_line_request_input(lines[iPin], CONSUMER);
+   }
+#else // new 2.x API
+   struct gpiod_line_settings *settings;
+   struct gpiod_line_config *line_cfg;
+   struct gpiod_request_config *req_cfg;
+   chip = gpiod_chip_open("/dev/gpiochip0");
+   if (!chip) {
+        printf("chip open failed\n");
+           return;
+   }
+   settings = gpiod_line_settings_new();
+   if (!settings) {
+        printf("line_settings_new failed\n");
+           return;
+   }
+   gpiod_line_settings_set_direction(settings, (iMode == OUTPUT) ? GPIOD_LINE_DIRECTION_OUTPUT : GPIOD_LINE_DIRECTION_INPUT);
+   line_cfg = gpiod_line_config_new();
+   if (!line_cfg) return;
+   gpiod_line_config_add_line_settings(line_cfg, (const unsigned int *)&iPin, 1, settings);
+   req_cfg = gpiod_request_config_new();
+   gpiod_request_config_set_consumer(req_cfg, CONSUMER);
+   lines[iPin] = gpiod_chip_request_lines(chip, req_cfg, line_cfg);
+   gpiod_request_config_free(req_cfg);
+   gpiod_line_config_free(line_cfg);
+   gpiod_line_settings_free(settings);
+   gpiod_chip_close(chip);
+#endif
+} /* pinMode() */
+void BBCapTouch::digitalWrite(uint8_t iPin, uint8_t iState)
+{
+        if (lines[iPin] == 0) return;
+#ifdef GPIOD_API // old 1.6 API
+   gpiod_line_set_value(lines[iPin], iState);
+#else // new 2.x API
+   gpiod_line_request_set_value(lines[iPin], iPin, (iState) ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE);
+#endif
+} /* digitalWrite() */
+#else // must be ESP-IDF
 void BBCapTouch::pinMode(uint8_t u8Pin, uint8_t u8Mode)
 {
     gpio_config_t io_conf = {};
@@ -66,6 +152,7 @@ void BBCapTouch::digitalWrite(uint8_t u8Pin, uint8_t u8State)
 {
     gpio_set_level(u8Pin, u8State);
 } /* digitalWrite() */
+#endif // __LINUX__
 #endif // !ARDUINO
 void BBCapTouch::reset(int iRST)
 {
@@ -156,6 +243,14 @@ uint8_t ucTemp[4];
     myWire->setClock(u32Speed);
     myWire->setTimeout(1000);
 #else
+#ifdef __LINUX__
+char filename[32];
+int iChannel = iSDA;
+    sprintf(filename, "/dev/i2c-%d", iChannel);
+    if ((_file_i2c = open(filename, O_RDWR)) < 0) {
+        fprintf(stderr, "Failed to open the i2c bus\n");
+    }
+#else // must be ESP-IDF
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = iSDA,
@@ -167,6 +262,7 @@ uint8_t ucTemp[4];
     i2c_driver_delete(I2C_NUM_0); // remove driver (if installed)
     i2c_param_config(I2C_NUM_0, &conf); // configure I2C device 0
     i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0); // configure with no send or receive buffers
+#endif // __LINUX__
 #endif
     _iType = CT_TYPE_UNKNOWN;
 
@@ -214,7 +310,9 @@ uint8_t ucTemp[4];
         delay(20);
         I2CRead(_iAddr, (uint8_t *)&bl_data, sizeof(bl_data));
        } while (bl_data.bl_status & 0x10 && tries++ < 10); // while bootloader mode
-       if (tries >= 10) Serial.println("bootloader mode timed out");
+       if (tries >= 10) {
+       //    Serial.println("bootloader mode timed out");
+       }
        // set OP mode
        ucTemp[0] = 0;
        ucTemp[1] = 0; // start op mode
@@ -288,13 +386,18 @@ uint8_t ucTemp[4];
 #ifdef ARDUINO
        myWire->end();
 #else
+#ifdef __LINUX__
+       close(_file_i2c);
+#else
        i2c_driver_delete(I2C_NUM_0);
+#endif // __LINUX__
 #endif
        return CT_ERROR; // no device found
     }
     return CT_SUCCESS;
 } /* init() */
 
+#ifndef __LINUX__
 // Initialize the touch controller from a pre-defined configuration name
 int BBCapTouch::init(int iConfigName)
 {
@@ -345,6 +448,7 @@ const BBCT_CONFIG *pC = &_configs[iConfigName];
                400000);
 #endif
 } /* init() */
+#endif
 //
 // Test if an I2C device is monitoring an address
 // return true if it responds, false if no response
@@ -356,8 +460,20 @@ bool BBCapTouch::I2CTest(uint8_t u8Addr)
   myWire->beginTransmission(u8Addr);
   return(myWire->endTransmission(true) == 0);
 #else // allow 100ms for device to respond
+#ifdef __LINUX__
+uint8_t response = 0;
+
+    if (ioctl(_file_i2c, I2C_SLAVE, u8Addr) >= 0) {
+        // probe this address
+        uint8_t ucTemp;
+        if (read(_file_i2c, &ucTemp, 1) >= 0)
+            response = 1;
+    }
+    return response;
+#else // must be ESP-IDF
     uint8_t c = 0;
     return (i2c_master_write_to_device(I2C_NUM_0, u8Addr, &c, 1, 10) == ESP_OK);
+#endif // __LINUX__
 #endif
 } /* I2CTest() */
 //
@@ -374,7 +490,13 @@ int BBCapTouch::I2CWrite(uint8_t u8Addr, uint8_t *pData, int iLen)
     myWire->write(pData, (uint8_t)iLen);
     rc = !myWire->endTransmission();
 #else
+#ifdef __LINUX__
+        ioctl(_file_i2c, I2C_SLAVE, u8Addr);
+        rc = write(_file_i2c, pData, iLen);
+        return rc;
+#else // must be ESP-IDF
     rc = (i2c_master_write_to_device(I2C_NUM_0, u8Addr, pData, iLen, 100) == ESP_OK);
+#endif // __LINUX__
 #endif
     return rc;
 } /* I2CWrite() */
@@ -410,10 +532,19 @@ int BBCapTouch::I2CReadRegister16(uint8_t u8Addr, uint16_t u16Register, uint8_t 
         ucTemp[0] = (uint8_t)(u16Register>>8); // high byte
         ucTemp[1] = (uint8_t)u16Register; // low byte
     }
+#ifdef __LINUX__
+        ioctl(_file_i2c, I2C_SLAVE, u8Addr);
+        rc = write(_file_i2c, ucTemp, 2); // write the register value
+        if (rc == 2)
+        {
+            i = read(_file_i2c, pData, iLen);
+        }
+#else // esp-idf
     i2c_master_write_read_device(I2C_NUM_0, u8Addr, ucTemp, 2, pData, iLen, 100);
     if (rc == ESP_OK) {
             i = iLen;
     }
+#endif // __LINUX__
 #endif
   return i;
 
@@ -438,8 +569,17 @@ int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pDa
       pData[i++] = myWire->read();
   }
 #else
+#ifdef __LINUX__
+        ioctl(_file_i2c, I2C_SLAVE, u8Addr);
+        rc = write(_file_i2c, &u8Register, 1); // write the register value
+        if (rc == 1)
+        {
+                i = read(_file_i2c, pData, iLen);
+        }
+#else // esp-idf
     rc = i2c_master_write_read_device(I2C_NUM_0, u8Addr, &u8Register, 1, pData, iLen, 100);
     i = (rc == ESP_OK);
+#endif // __LINUX__
 #endif
   return i;
 } /* I2CReadRegister() */
@@ -457,9 +597,14 @@ int BBCapTouch::I2CRead(uint8_t u8Addr, uint8_t *pData, int iLen)
      pData[i++] = myWire->read();
   }
 #else
+#ifdef __LINUX__
+        ioctl(_file_i2c, I2C_SLAVE, u8Addr);
+        i = read(_file_i2c, pData, iLen);
+#else // esp-idf
     int rc;
     rc = i2c_master_read_from_device(I2C_NUM_0, u8Addr, pData, iLen, 100);
     i = (rc == ESP_OK) ? iLen : 0;
+#endif // __LINUX__
 #endif
   return i;
 } /* I2CRead() */
