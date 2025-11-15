@@ -73,6 +73,7 @@ enum {
   TOUCH_VIEWE_2432,
   TOUCH_T_DISPLAY_S3_AMOLED_164,
   TOUCH_VPLAYER,
+  TOUCH_T_DECK_PRO,
   TOUCH_COUNT
 };
 // structure holding the configurations
@@ -91,6 +92,7 @@ enum {
   CT_TYPE_TMA445,
   CT_TYPE_SPD2010,
   CT_TYPE_CHSC6540,
+  CT_TYPE_CST328,
   CT_TYPE_COUNT
 };
 
@@ -101,6 +103,7 @@ enum {
 #define FT6X36_ADDR2 0x48
 #define CST820_ADDR 0x15
 #define CST226_ADDR 0x5A
+#define CST328_ADDR 0x1A
 #define CHSC6540_ADDR 0x2E
 #define MXT144_ADDR 0x4A
 #define TMA445_ADDR 0x24
@@ -118,9 +121,6 @@ enum {
   GESTURE_LONG_PRESS = 0x0C
 };
 
-// TMA445 Security KEY
-static uint8_t tma445_key[] = {0x00, 0x00, 0xFF, 0xA5, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
-    
 /* TrueTouch Standard Product Gen3 (Txx3xx) interface definition */
 typedef struct cyttsp_xydata_tag {
 	uint8_t hst_mode;

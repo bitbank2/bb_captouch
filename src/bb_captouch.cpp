@@ -34,6 +34,9 @@ struct gpiod_line_request *lines[64];
 #endif
 #endif // __LINUX__
 
+// TMA445 Security KEY
+static const uint8_t tma445_key[] = {0x00, 0x00, 0xFF, 0xA5, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+
 static const BBCT_CONFIG _configs[] = {
        // sda, scl, irq, rst
        {21, 22, 7, 23}, // TOUCH_T_QT_C6
@@ -61,6 +64,7 @@ static const BBCT_CONFIG _configs[] = {
        {1,3,4,2}, // TOUCH_VIEWE_2432
        {7, 6, 9, 8}, // TOUCH_T_DISPLAY_S3_AMOLED_164
        {16,15,18,17}, // TOUCH_VPLAYER (ESP32-S3 + 1.69 280x240)
+       {13,14,12,45}, // TOUCH_T_DECK_PRO
        {0,0,0,0}
     };
 
@@ -301,7 +305,7 @@ int iChannel = iSDA;
        I2CWrite(_iAddr, ucTemp, 2);
        delay(50);
        // send security key
-       I2CWrite(_iAddr, tma445_key, sizeof(tma445_key));
+       I2CWrite(_iAddr, (uint8_t *)tma445_key, sizeof(tma445_key));
        delay(88);
 
        uint8_t tries = 0;
@@ -338,6 +342,14 @@ int iChannel = iSDA;
        }
        ucTemp[0] = ucTemp[1] = 0x5a; // set interrupt mode
        I2CWrite(_iAddr, ucTemp, 2);
+       return CT_SUCCESS;
+    }
+    if (I2CTest(CST328_ADDR)) {
+       _iType = CT_TYPE_CST328;
+       _iAddr = CST328_ADDR;
+       if (iINT != -1) {
+          pinMode(iINT, INPUT);
+       }
        return CT_SUCCESS;
     }
     if (I2CTest(CST226_ADDR)) {
@@ -555,7 +567,6 @@ int BBCapTouch::I2CReadRegister16(uint8_t u8Addr, uint16_t u16Register, uint8_t 
 //
 int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pData, int iLen)
 {
-  int rc;
   int i = 0;
 
 #ifdef ARDUINO
@@ -570,6 +581,7 @@ int BBCapTouch::I2CReadRegister(uint8_t u8Addr, uint8_t u8Register, uint8_t *pDa
   }
 #else
 #ifdef __LINUX__
+  int rc;
         ioctl(_file_i2c, I2C_SLAVE, u8Addr);
         rc = write(_file_i2c, &u8Register, 1); // write the register value
         if (rc == 1)
@@ -829,6 +841,23 @@ int i, j, rc = 0;
         return 1;
     } // AXS15231
  
+    if (_iType == CT_TYPE_CST328) {
+        i = I2CReadRegister(_iAddr, 0, ucTemp, 28); // read the whole block of regs
+        c = ucTemp[0] & 0xf; // active finger? (0x10 indicates finger was released)
+        if (c != 6) return 0; // nothing touching
+        c = ucTemp[5] & 0x7f; // finger count
+        pTI->count = c;
+        j = 0;
+        for (i=0; i<c; i++) {
+           pTI->x[i] = (uint16_t)((ucTemp[j+1] << 4) | ((ucTemp[j+3] >> 4) & 0xf));
+           pTI->y[i] = (uint16_t)((ucTemp[j+2] << 4) | (ucTemp[j+3] & 0xf));
+           pTI->pressure[i] = ucTemp[j+4];
+           j = (i == 0) ? (j+7) : (j+5);
+        }
+        if (_iOrientation != 0) fixSamples(pTI);
+        return 1;
+    } // CST328
+    
     if (_iType == CT_TYPE_CST226) {
         i = I2CReadRegister(_iAddr, 0, ucTemp, 28); // read the whole block of regs
 //      Serial.printf("I2CReadRegister returned %d\n", i);
@@ -860,7 +889,7 @@ int i, j, rc = 0;
         }
         if (_iOrientation != 0) fixSamples(pTI);
         return 1;
-    }
+    } // CST226
 
     if (_iType == CT_TYPE_CHSC6540) {
        if (digitalRead(_iINT) == LOW) {
