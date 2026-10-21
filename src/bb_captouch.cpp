@@ -243,7 +243,12 @@ uint8_t ucTemp[4];
     _iRST = iRST; // save for sleep/wake of AXS15231
 #ifdef ARDUINO
     myWire = _myWire;
+#ifdef ARDUINO_ARCH_ESP32
     myWire->begin(iSDA, iSCL); // this is specific to ESP32 MCUs
+#else
+    myWire->setPins((uint8_t)iSDA, (uint8_t)iSCL);
+    myWire->begin();
+#endif // ESP32
     myWire->setClock(u32Speed);
     myWire->setTimeout(1000);
 #else
@@ -419,6 +424,7 @@ const BBCT_CONFIG *pC = &_configs[iConfigName];
        return CT_ERROR;
    }
 
+#ifdef ARDUINO_ARCH_ESP32
    if (iConfigName == TOUCH_WS_AMOLED_241) { // touch is rotated
        _iOrientation = 270;
        _iWidth = 450;
@@ -453,6 +459,8 @@ const BBCT_CONFIG *pC = &_configs[iConfigName];
        }
        Wire.end();
    }
+#endif // ESP32
+
    return init(pC->i8SDA, pC->i8SCL, pC->i8RST, pC->i8IRQ,
 #ifdef ARDUINO
                400000, &Wire);
